@@ -1,0 +1,112 @@
+//NETWORK RECONNECT
+
+    [SerializeField] private GameObject WaitForInternectConnectionToReconnect;
+    [SerializeField] private GameObject WaitForOtherPlayerToReconnect;
+
+    private bool isNotReachable = true;
+    private bool isReachable = false;
+
+    private IEnumerator WaitForInternetConnection()
+    {
+
+        yield return new WaitForSeconds(1f);
+
+        if (Application.internetReachability == NetworkReachability.NotReachable && isNotReachable)
+        {
+
+            PhotonNetwork.Disconnect();
+            isNotReachable = false;
+            isReachable = true;
+        }
+        else if ((Application.internetReachability == NetworkReachability.ReachableViaCarrierDataNetwork || Application.internetReachability == NetworkReachability.ReachableViaLocalAreaNetwork) && isReachable)
+        {
+
+            PhotonNetwork.ReconnectAndRejoin();
+            isNotReachable = true;
+            isReachable = false;
+        }
+        StartCoroutine(WaitForInternetConnection());
+    }
+    public override void OnJoinedRoom()
+    {
+
+        Debug.Log("OnJoinedRoom");
+        WaitForInternectConnectionToReconnect.SetActive(false);
+    }
+    public override void OnPhotonJoinRoomFailed(object[] codeAndMsg)
+    {
+
+        Debug.Log("OnPhotonJoinRoomFailed");
+        PhotonNetwork.ReconnectAndRejoin();
+    }
+    public override void OnDisconnectedFromPhoton()
+    {
+
+        Debug.Log("OnDisconnectedFromPhoton");
+        GameManager.Instance.canOnJoinedRoomCalled = false;
+        WaitForInternectConnectionToReconnect.SetActive(true);
+        PauseTimers();
+        playerObjects[currentPlayerIndex].dice.GetComponent<GameDiceController>().EnableDiceShadow();
+        for (int i = 0; i < playerObjects.Count; i++)
+        {
+            for (int j = 0; j < 4; j++)
+            {
+                GameManager.Instance.playerObjects[i].pawns[j].GetComponent<LudoPawnController>().GoToInitPosition(true);
+            }
+        }
+    }
+    public override void OnPhotonPlayerConnected(PhotonPlayer newPlayer)
+    {
+
+        Debug.Log("OnPhotonPlayerConnected");
+        switch (newPlayer.IsInactive)
+        {
+
+            case true:
+                break;
+            case false:
+                print("OnPhotonPlayerConnected" + playerObjects[currentPlayerIndex].timer.GetComponent<Image>().fillAmount);
+                photonView.RPC("OnPhotonPlayerActivated", PhotonTargets.Others, newPlayer.ID, currentPlayerIndex, playerObjects[currentPlayerIndex].timer.GetComponent<Image>().fillAmount);
+                break;
+        }
+    }
+    public override void OnPhotonPlayerActivityChanged(PhotonPlayer otherPlayer)
+    {
+
+        Debug.Log("OnPhotonPlayerActivityChanged");
+        switch (otherPlayer.IsInactive)
+        {
+
+            case true:
+                Debug.Log("OnPhotonPlayerActivityChanged-IsInActive");
+                WaitForOtherPlayerToReconnect.SetActive(true);
+                PauseTimers();
+                playerObjects[currentPlayerIndex].dice.GetComponent<GameDiceController>().EnableDiceShadow();
+                break;
+            case false:
+                Debug.Log("OnPhotonPlayerActivityChanged-Active");
+                WaitForOtherPlayerToReconnect.SetActive(false);
+                photonView.RPC("OnPhotonPlayerActivated", PhotonTargets.AllBuffered, otherPlayer.ID, currentPlayerIndex, playerObjects[currentPlayerIndex].timer.GetComponent<Image>().fillAmount);
+                break;
+        }
+    }
+    [PunRPC]
+    private void OnPhotonPlayerActivated(int ID, int currentPlayerIndex, float fillAmount)
+    {
+
+        if (PhotonNetwork.player.ID == ID)
+        {
+
+            Debug.Log("OnPhotonPlayerActivated-It'sMeCallback" + fillAmount);
+            this.currentPlayerIndex = currentPlayerIndex;
+            SetTurn();
+            playerObjects[currentPlayerIndex].timer.GetComponent<Image>().fillAmount = fillAmount;
+        }
+        else
+        {
+
+            Debug.Log("OnPhotonPlayerActivated-It'sNotMeCallback");
+        }
+        playerObjects[currentPlayerIndex].timer.GetComponent<UpdatePlayerTimer>().paused = false;
+
+    }
